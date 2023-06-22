@@ -1,3 +1,77 @@
+module main(
+    input clk, // 时钟信号
+    input rst // 复位信号
+);
+    // 定义密码
+    reg [3:0] pwd = 4'h1; // 设置密码为 0001
+    
+    // 定义模块实例
+    wire [3:0] pwd_out;
+    wire [3:0] pwd_in;
+    wire [1:0] cnt;
+    wire locked;
+    wire timer_expired;
+    wire beep;
+    wire unlock;
+    wire alarm;
+    wire lock;
+    
+    pwd_storage pwd_storage_inst(
+        .clk(clk),
+        .rst(rst),
+        .pwd_in(pwd),
+        .en(1'b1),
+        .pwd_out(pwd_out)
+    );
+    
+    pwd_input pwd_input_inst(
+        .clk(clk),
+        .rst(rst),
+        .pwd(pwd_out),
+        .start(1'b1), // 设置开始输入信号为高电平
+        .reset_timer(1'b0),
+        .pwd_in(pwd_in),
+        .cnt(cnt),
+        .locked(locked),
+        .timer_expired(timer_expired),
+        .beep(beep)
+    );
+    
+    output_driver output_driver_inst(
+        .clk(clk),
+        .rst(rst),
+        .pwd(pwd_out),
+        .unlock(unlock),
+        .alarm(alarm),
+        .timer_expired(timer_expired),
+        .lock(lock),
+        .beep(beep)
+    );
+    
+    always @(posedge clk or negedge rst) begin
+        if (~rst) begin
+            unlock <= 1'b0;
+            alarm <= 1'b0;
+            lock <= 1'b1;
+        end else if (pwd_in == pwd && ~locked) begin
+            unlock <= 1'b1;
+            alarm <= 1'b0;
+            lock <= 1'b0;
+        end else if ((pwd_in != pwd && cnt == 2'd2) || (timer_expired && ~locked)) begin
+            unlock <= 1'b0;
+            alarm <= 1'b1;
+            lock <= 1'b1;
+        end else begin
+            unlock <= 1'b0;
+            alarm <= 1'b0;
+            lock <= 1'b1;
+        end
+    end
+endmodule
+
+
+
+
 // 密码存储模块
 module pwd_storage(
 input clk, // 时钟信号
