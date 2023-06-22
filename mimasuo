@@ -1,0 +1,189 @@
+// 密码存储模块
+module pwd_storage(
+input clk, // 时钟信号
+input rst, // 复位信号
+input [3:0] pwd_in, // 输入密码
+input en, // 使能信号
+output reg [3:0] pwd_out // 输出密码
+);
+always @(posedge clk or negedge rst) begin
+if (~rst) begin
+pwd_out <= 4'h0; // 复位密码
+end else if (en) begin
+pwd_out <= pwd_in; // 存储密码
+end
+end
+endmodule
+
+
+// 密码输入模块
+module pwd_input(
+    input clk, // 时钟信号
+    input rst, // 复位信号
+    input [3:0] pwd, // 密码
+    input start, // 开始输入信号
+    input reset_timer, // 重置计时器信号
+    output reg [3:0] pwd_in, // 输入密码
+    output reg [1:0] cnt, // 错误计数器
+    output reg locked, // 是否锁定
+    output reg timer_expired, // 计时器是否到期
+    output reg beep // 蜂鸣器输出
+);
+    // 定义状态
+    localparam IDLE = 2'd0;
+    localparam INPUT = 2'd1;
+    localparam UNLOCK = 2'd2;
+    localparam ALARM = 2'd3;
+    
+    // 定义状态寄存器和下一个状态
+    reg [1:0] state, next_state;
+    
+    // 定义计时器
+    reg [15:0] timer;
+    
+    // 定义蜂鸣器计时器
+    reg [15:0] beep_timer;
+    
+    always @(posedge clk or negedge rst) begin
+        if (~rst) begin
+            state <= IDLE; // 复位状态
+            pwd_in <= 4'h0; // 复位密码
+            cnt <= 2'd0; // 复位计数器
+            locked <= 1'b0; // 不锁定
+            timer <= 16'd0; // 复位计时器
+            timer_expired <= 1'b0; // 计时器未到期
+            beep <= 1'b0; // 关闭蜂鸣器
+            beep_timer <= 16'd0; // 复位蜂鸣器计时器
+        end else begin
+            state <= next_state; // 更新状态
+        end
+    end
+    
+    always @(*) begin
+        // 默认状态不变
+        next_state = state;
+        timer_expired = 1'b0;
+        beep = 1'b0; // 默认关闭蜂鸣器
+        
+        case (state)
+            IDLE: begin
+                // 如果开始输入信号为高电平，进入输入状态
+                if (start) begin
+                    next_state = INPUT;
+                    timer <= 16'd5000; // 设置计时器初始值
+                end            end
+            
+            INPUT: begin
+                // 如果重置计时器信号为高电平，重置计时器
+                if (reset_timer) begin
+                    timer <= 16'd5000;
+                end
+                
+                // 如果输入密码与正确密码相同，进入开锁状态
+                if (pwd_in == pwd) begin
+                    next_state = UNLOCK;
+                    cnt <= 2'd0; // 复位计数器
+                    locked <= 1'b0; // 不锁定
+                    timer <= 16'd0; // 停止计时器
+                    beep_timer <= 16'd0; // 复位蜂鸣器计时器
+                // 如果输入密码错误，计数器加 1
+                // 如果计数器达到 3，进入报警状态
+                } else if (start) begin
+                    pwd_in <= pwd_in << 1 | start;
+                    if (pwd_in != pwd) begin
+                        cnt <= cnt + 1;
+                        if (cnt == 2'd2) begin
+                            next_state = ALARM;
+                            locked <= 1'b1; // 上锁
+                            timer <= 16'd10000; // 设置计时器初始值
+                            beep_timer <= 16'd500; // 设置蜂鸣器计时器初始值
+                        end
+                    // 如果密码输入正确，进入开锁状态
+                    } else begin
+                        next_state = UNLOCK;
+                        cnt <= 2'd0; // 复位计数器
+                        locked <= 1'b0; // 不锁定
+                        timer <= 16'd0; // 停止计时器
+                        beep_timer <= 16'd0; // 复位蜂鸣器计时器
+                    end
+                end
+                
+                // 如果计时器到期，进入报警状态
+                if (timer == 16'd0) begin
+                    next_state = ALARM;
+                    locked <= 1'b1; // 上锁
+                    timer_expired <= 1'b1; // 计时器到期
+                    beep_timer <= 16'd500; // 设置蜂鸣器计时器初始值
+                end
+            end
+            
+            UNLOCK: begin
+                // 如果重置计时器信号为高电平，重置计时器
+                if (reset_timer) begin
+                    timer <= 16'd5000;
+                end
+                
+                // 如果开始输入信号为高电平，回到输入状态
+                if (start) begin
+                    next_state = INPUT;
+                    pwd_in <= 4'h0; // 复位密码
+                    timer <= 16'd5000; // 设置计时器初始值
+                end
+            end
+            
+            ALARM: begin
+                // 如果重置计时器信号为高电平，重置计时器
+                if (reset_timer) begin
+                    timer <= 16'd10000;
+                end
+                
+                // 如果蜂鸣器计时器到期，切换蜂鸣器输出状态
+                if (beep_timer == 16'd0) begin
+                    beep_timer <= 16'd500;
+                    beep <= ~beep;
+                end
+                
+                // 如果计时器到期，复位状态
+                if (timer == 16'd0) begin
+                    next_state = IDLE;
+                    pwd_in <= 4'h0; // 复位密码
+                    cnt <= 2'd0; // 复位计数器
+                    locked <= 1'b0; // 不锁定
+                    timer_expired <= 1'b1; // 计时器到期
+                    beep <= 1'b0; // 关闭蜂鸣器
+                    beep_timer <= 16'd0; // 复位蜂鸣器计时器
+                end
+            end
+        endcase
+    end
+endmodule
+
+
+
+
+// 输出驱动模块
+module output_driver(
+    input clk, // 时钟信号
+    input rst, // 复位信号
+    input [3:0] pwd, // 密码
+    input unlock, // 开锁信号
+    input alarm, // 报警信号
+    input timer_expired, // 计时器到期信号
+    output reg lock, // 锁状态
+    output reg beep // 蜂鸣器输出
+);
+    always @(posedge clk or negedge rst) begin
+        if (~rst) begin
+            lock <= 1'b1; // 上锁
+            beep <= 1'b0; // 关闭蜂鸣器
+        end else if (unlock) begin
+            lock <= 1'b0; // 开锁
+            beep <= 1'b0; // 关闭蜂鸣器
+        end else if (alarm || timer_expired) begin
+            lock <= 1'b1; // 报警或计时器到期，上锁
+            beep <= 1'b1; // 打开蜂鸣器
+        end else begin
+            beep <= 1'b0; // 关闭蜂鸣器
+        end
+    end
+endmodule
